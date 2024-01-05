@@ -2,23 +2,6 @@ package main
 
 import "fmt"
 
-var multiply = func(values []int, multiplier int) []int {
-	multipliedValues := make([]int, len(values))
-	for i, v := range values {
-		multipliedValues[i] = v * multiplier
-	}
-	return multipliedValues
-}
-
-var add = func(values []int, additive int) []int {
-	addedValues := make([]int, len(values))
-	for i, v := range values {
-		addedValues[i] = v + additive
-	}
-
-	return addedValues
-}
-
 var generator = func(done <-chan interface{}, integers ...int) <-chan int {
 	intStream := make(chan int)
 	go func() {
@@ -34,14 +17,52 @@ var generator = func(done <-chan interface{}, integers ...int) <-chan int {
 	return intStream
 }
 
+var multiply = func(
+	done <-chan interface{},
+	intStream <-chan int,
+	multiplier int,
+) <-chan int {
+	multipliedStream := make(chan int)
+	go func() {
+		defer close(multipliedStream)
+		for i := range intStream {
+			select {
+			case <-done:
+				return
+			case multipliedStream <- i * multiplier:
+			}
+		}
+	}()
+	return multipliedStream
+}
+
+var add = func(
+	done <-chan interface{},
+	intStream <-chan int,
+	additive int,
+) <-chan int {
+	addedStream := make(chan int)
+	go func() {
+		defer close(addedStream)
+		for i := range intStream {
+			select {
+			case <-done:
+				return
+			case addedStream <- i + additive:
+			}
+		}
+	}()
+	return addedStream
+}
 
 func main() {
 	done := make(chan interface{})
-  defer close(done)
-  intStream := generator(done, 1, 2, 3, 4)
-  
-  pipeline := multiply(done, add(done, multiply(done, intStream, 2), 1), 2) // <--------------final pipeline
-  for v := range pipeline {
-   fmt.Println(v)
-  }
+	defer close(done)
+	intStream := generator(done, 1, 2, 3, 4)
+
+	pipeline := multiply(done, add(done, multiply(done, intStream, 2), 1), 2)
+
+	for v := range pipeline {
+		fmt.Println(v)
+	}
 }
